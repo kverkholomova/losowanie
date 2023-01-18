@@ -1,0 +1,144 @@
+#
+# Copyright (C) 2019 Luca Pasqualini
+# University of Siena - Artificial Intelligence Laboratory - SAILab
+#
+# Inspired by the work of David Johnston (C) 2017: https://github.com/dj-on-github/sp800_22_tests
+#
+# NistRng is licensed under a BSD 3-Clause.
+#
+# You should have received a copy of the license along with this
+# work. If not, see <https://opensource.org/licenses/BSD-3-Clause>.
+
+# Import packages
+
+from random import randrange, random
+import numpy
+from runstest import runsTest
+from chi_square_test import chi_square
+
+# Import src
+
+from nistrng import *
+
+# The Unicode max number of order
+UNICODE_MAX_ORDER_NUMBER = 1_114_112
+# the amount of tests to check the sample for
+TEST_AMOUNT = 13
+
+# a function to safe cast a value to another type
+def safe_cast(value, type, default=None):
+    try:
+        return type(value)
+    except(ValueError, TypeError):
+        return default
+
+# get input from a user with checks and safe casting
+def get_input_from_user():
+
+    random_sequence = []
+
+    element_type = input("Which element do you wish to generate sequence with? Choose one of the following: number or letter: ")
+    while element_type not in("number", "letter"):
+        element_type = input("You did not enter one of the variants in the braces. Please enter either \"number\" or \"letter\". Which element do you wish to generate sequence with? Choose one of the following: number or letter: ")
+
+    len_random_or_no = input("Do you wish to generate a length of a sequence to generate? (Y to generate a random length or N to input it yourself): ")
+    while len_random_or_no not in "NY" or len(len_random_or_no) == 0:
+        len_random_or_no = input("Please enter either N or Y (uppercase only). Do you wish to generate a length of a sequence to generate? (Y to generate a random length or N to input it yourself): ")
+
+    seq_random_or_no = input("Do you wish to generate a random sequence or to input it yourself? (Y to generate a sequence with Python or N to input it yourself): ")
+    while seq_random_or_no not in "NY" or len(seq_random_or_no) == 0:
+        seq_random_or_no = input("Please enter either N or Y (uppercase only). Do you wish to generate a random sequence or to input it yourself? (Y to generate a sequence with Python or N to input it yourself): ")
+    
+    if len_random_or_no=="N":
+
+        str_number = input("Input a number of elements in a random sequence: ")
+        n = safe_cast(str_number, int)
+        while (n == None or n <= 0 or n % 1 != 0):
+            str_number = input("You entered invalid length of a random sequence. Input a number of elements in a random sequence: ")
+            n = safe_cast(str_number, int)
+
+    else:
+
+            n = int(randrange(1000, 10000))
+
+    if element_type == "letter":
+
+        for i in range(n):
+
+            if seq_random_or_no=="N":
+
+                random_sequence.append(None)
+                random_sequence[i] = input("Please, enter a character: ")
+                while (len(random_sequence[i]) != 1 or ord(random_sequence[i]) > UNICODE_MAX_ORDER_NUMBER):
+                    random_sequence[i] = input("You entered no character or more than one character. Please, enter a character: ")
+                random_sequence[i] = ord(random_sequence[i])
+
+            else:
+                random_sequence = [randrange(-UNICODE_MAX_ORDER_NUMBER/2, UNICODE_MAX_ORDER_NUMBER/2) for i in range(n)]
+
+    else:
+
+        if seq_random_or_no == "N":
+
+            for i in range(n):
+            
+                random_sequence.append(None)
+                random_sequence[i] = input("Please, enter a number: ")
+                while (safe_cast(random_sequence[i], float) == None):
+                    random_sequence[i] = input("You entered not a number. Please, enter a number: ")
+                random_sequence[i] = float(random_sequence[i])
+
+        else:
+            random_sequence = [randrange(-UNICODE_MAX_ORDER_NUMBER/2, UNICODE_MAX_ORDER_NUMBER/2) for i in range(n)]
+
+    return random_sequence
+
+if __name__ == "__main__":
+
+
+    general_score = 0
+
+    # first check by manual runs test
+    random_sequence = get_input_from_user()
+    runs_test = runsTest(random_sequence)
+    print("Manual check by runs test: ", )
+    general_score += 1 if runs_test[0] else 0
+
+    # then check by manual chi square test
+    sequence: numpy.ndarray = numpy.array(random_sequence)
+    (Randomness_confirmation, Xi_square_value, p_value) = chi_square(sequence)
+    print("Manual check by chi square test: ")
+    print("The sequence may be random" if Randomness_confirmation else "The sequence is not random")
+    print("The Xi square value: ", Xi_square_value)
+    print("The probability of the randomness: ", p_value)
+    general_score += 1 if Randomness_confirmation else 0
+    
+    binary_sequence: numpy.ndarray = pack_sequence(sequence)
+    # Print sequence
+    print("Random sequence generated by NumPy:")
+    print(sequence)
+    print("Random sequence generated by NumPy encoded in 8-bit signed format:")
+    print(binary_sequence)
+    print("Original sequence taken back by unpacking (to check the correctness of packing process:")
+    print(unpack_sequence(binary_sequence))
+    # Check the eligibility of the test and generate an eligible battery from the default NIST-sp800-22r1a battery
+    eligible_battery: dict = check_eligibility_all_battery(binary_sequence, SP800_22R1A_BATTERY)
+    # Print the eligible tests
+    print("Eligible test from NIST-SP800-22r1a:")
+    for name in eligible_battery.keys():
+        print("-" + name)
+    # Test the sequence on the eligible tests
+    results = run_all_battery(binary_sequence, eligible_battery, False)
+    # Print results one by one
+    print("Test results:")
+    for result, elapsed_time in results:
+        if result.passed:
+            general_score += 1
+            print("- PASSED - score: " + str(numpy.round(result.score, 3)) + " - " + result.name + " - elapsed time: " + str(elapsed_time) + " ms")
+            
+        else:
+            print("- FAILED - score: " + str(numpy.round(result.score, 3)) + " - " + result.name + " - elapsed time: " + str(elapsed_time) + " ms")
+    
+    print("General score is: ", general_score/TEST_AMOUNT)
+    general_score_in_percents = general_score/TEST_AMOUNT * 100
+    print("Speaking roughly, according to the latest tests the sequence is {:.2f}% random.".format(general_score_in_percents))
